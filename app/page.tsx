@@ -41,7 +41,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react"
-import { useRef, useState, useEffect, useCallback } from "react"
+import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react"
 
 // Temporary user ID (replace with actual auth later)
 const USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -57,42 +57,55 @@ interface ChatSidebarProps {
 
 function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelectConversation, onRenameConversation, onDeleteConversation }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState("")
 
-  const handleStartRename = (conversation: Conversation) => {
+  // Debounce search query for better performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  const handleStartRename = useCallback((conversation: Conversation) => {
     setEditingId(conversation.id)
     setEditTitle(conversation.title)
-  }
+  }, [])
 
-  const handleSaveRename = () => {
+  const handleSaveRename = useCallback(() => {
     if (editingId && editTitle.trim()) {
       onRenameConversation(editingId, editTitle.trim())
       setEditingId(null)
       setEditTitle("")
     }
-  }
+  }, [editingId, editTitle, onRenameConversation])
 
-  const handleCancelRename = () => {
+  const handleCancelRename = useCallback(() => {
     setEditingId(null)
     setEditTitle("")
-  }
+  }, [])
 
-  const handleDeleteClick = (id: string) => {
+  const handleDeleteClick = useCallback((id: string) => {
     if (confirm("Weet je zeker dat je dit gesprek wilt verwijderen?")) {
       onDeleteConversation(id)
     }
-  }
+  }, [onDeleteConversation])
 
-  // Filter conversations based on search query
-  const filteredConversations = searchQuery.trim()
-    ? conversations.filter(conv =>
-        conv.title.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : conversations
+  // Filter conversations based on search query - memoized for performance
+  const filteredConversations = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) return conversations
 
-  // Group conversations by time period
-  const groupedConversations = () => {
+    const query = debouncedSearchQuery.toLowerCase()
+    return conversations.filter(conv =>
+      conv.title.toLowerCase().includes(query)
+    )
+  }, [conversations, debouncedSearchQuery])
+
+  // Group conversations by time period - memoized for performance
+  const groupedConversations = useMemo(() => {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const yesterday = new Date(today)
@@ -118,7 +131,7 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     })
 
     return groups.filter((group) => group.conversations.length > 0)
-  }
+  }, [filteredConversations])
 
   return (
     <Sidebar>
@@ -158,7 +171,7 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
             <span>Nieuw gesprek</span>
           </Button>
         </div>
-        {groupedConversations().map((group) => (
+        {groupedConversations.map((group) => (
           <SidebarGroup key={group.period}>
             <SidebarGroupLabel>{group.period}</SidebarGroupLabel>
             <SidebarMenu>
@@ -239,6 +252,9 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
   )
 }
 
+const MemoizedChatSidebar = memo(ChatSidebar)
+MemoizedChatSidebar.displayName = "ChatSidebar"
+
 interface ChatContentProps {
   conversationId: string | null
   onConversationCreated: (id: string) => Promise<void>
@@ -272,17 +288,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     }
   }, [])
 
-  // Load messages when conversation changes
-  useEffect(() => {
-    if (conversationId) {
-      loadConversationMessages(conversationId)
-    } else {
-      // Clear messages when starting new chat
-      setChatMessages([])
-    }
-  }, [conversationId])
-
-  const loadConversationMessages = async (convId: string) => {
+  const loadConversationMessages = useCallback(async (convId: string) => {
     try {
       const response = await fetch(`/api/conversations/${convId}/messages`)
       if (response.ok) {
@@ -298,17 +304,27 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     } catch (error) {
       console.error('Failed to load messages:', error)
     }
-  }
+  }, [scrollToBottomIfNeeded])
 
-  const handleCopy = async (content: string) => {
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (conversationId) {
+      loadConversationMessages(conversationId)
+    } else {
+      // Clear messages when starting new chat
+      setChatMessages([])
+    }
+  }, [conversationId, loadConversationMessages])
+
+  const handleCopy = useCallback(async (content: string) => {
     try {
       await navigator.clipboard.writeText(content)
     } catch (err) {
       console.error('Failed to copy text:', err)
     }
-  }
+  }, [])
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!prompt.trim()) return
 
     const userPrompt = prompt.trim()
@@ -448,7 +464,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
 
       setIsLoading(false)
     }
-  }
+  }, [prompt, conversationId, onConversationCreated, onRefreshConversations, scrollToBottomIfNeeded])
 
   return (
     <main className="flex h-screen flex-col overflow-hidden">
@@ -586,16 +602,14 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
   )
 }
 
+const MemoizedChatContent = memo(ChatContent)
+MemoizedChatContent.displayName = "ChatContent"
+
 export default function FullChatApp() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
 
-  // Load conversations on mount
-  useEffect(() => {
-    loadConversations()
-  }, [])
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const response = await fetch(`/api/conversations?user_id=${USER_ID}`)
 
@@ -609,17 +623,22 @@ export default function FullChatApp() {
     } catch (error) {
       console.error('Failed to load conversations:', error)
     }
-  }
+  }, [])
 
-  const handleNewChat = () => {
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
+
+  const handleNewChat = useCallback(() => {
     setCurrentConversationId(null)
-  }
+  }, [])
 
-  const handleSelectConversation = (id: string) => {
+  const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id)
-  }
+  }, [])
 
-  const handleConversationCreated = async (id: string) => {
+  const handleConversationCreated = useCallback(async (id: string) => {
     try {
       // Small delay to ensure backend has committed to database
       await new Promise(resolve => setTimeout(resolve, 200))
@@ -632,9 +651,9 @@ export default function FullChatApp() {
     } catch (error) {
       console.error('Error in handleConversationCreated:', error)
     }
-  }
+  }, [loadConversations])
 
-  const handleRenameConversation = async (id: string, newTitle: string) => {
+  const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
     try {
       const response = await fetch(`/api/conversations/${id}`, {
         method: 'PATCH',
@@ -654,9 +673,9 @@ export default function FullChatApp() {
       console.error('Error renaming conversation:', error)
       alert('Kan gesprek niet hernoemen. Probeer het opnieuw.')
     }
-  }
+  }, [loadConversations])
 
-  const handleDeleteConversation = async (id: string) => {
+  const handleDeleteConversation = useCallback(async (id: string) => {
     try {
       const response = await fetch(`/api/conversations/${id}`, {
         method: 'DELETE',
@@ -677,11 +696,11 @@ export default function FullChatApp() {
       console.error('Error deleting conversation:', error)
       alert('Kan gesprek niet verwijderen. Probeer het opnieuw.')
     }
-  }
+  }, [currentConversationId, loadConversations])
 
   return (
     <SidebarProvider>
-      <ChatSidebar
+      <MemoizedChatSidebar
         conversations={conversations}
         currentConversationId={currentConversationId}
         onNewChat={handleNewChat}
@@ -690,7 +709,7 @@ export default function FullChatApp() {
         onDeleteConversation={handleDeleteConversation}
       />
       <SidebarInset>
-        <ChatContent
+        <MemoizedChatContent
           conversationId={currentConversationId}
           onConversationCreated={handleConversationCreated}
           onRefreshConversations={loadConversations}
