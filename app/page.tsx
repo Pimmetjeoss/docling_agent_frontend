@@ -45,128 +45,65 @@ import {
   ThumbsUp,
   Trash,
 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useRef, useState, useEffect } from "react"
 
-// Initial conversation history
-const conversationHistory = [
-  {
-    period: "Today",
-    conversations: [
-      {
-        id: "t1",
-        title: "Project roadmap discussion",
-        lastMessage:
-          "Let's prioritize the authentication features for the next sprint.",
-        timestamp: new Date().setHours(new Date().getHours() - 2),
-      },
-      {
-        id: "t2",
-        title: "API Documentation Review",
-        lastMessage:
-          "The endpoint descriptions need more detail about rate limiting.",
-        timestamp: new Date().setHours(new Date().getHours() - 5),
-      },
-      {
-        id: "t3",
-        title: "Frontend Bug Analysis",
-        lastMessage:
-          "I found the issue - we need to handle the null state in the user profile component.",
-        timestamp: new Date().setHours(new Date().getHours() - 8),
-      },
-    ],
-  },
-  {
-    period: "Yesterday",
-    conversations: [
-      {
-        id: "y1",
-        title: "Database Schema Design",
-        lastMessage:
-          "Let's add indexes to improve query performance on these tables.",
-        timestamp: new Date().setDate(new Date().getDate() - 1),
-      },
-      {
-        id: "y2",
-        title: "Performance Optimization",
-        lastMessage:
-          "The lazy loading implementation reduced initial load time by 40%.",
-        timestamp: new Date().setDate(new Date().getDate() - 1),
-      },
-    ],
-  },
-  {
-    period: "Last 7 days",
-    conversations: [
-      {
-        id: "w1",
-        title: "Authentication Flow",
-        lastMessage: "We should implement the OAuth2 flow with refresh tokens.",
-        timestamp: new Date().setDate(new Date().getDate() - 3),
-      },
-      {
-        id: "w2",
-        title: "Component Library",
-        lastMessage:
-          "These new UI components follow the design system guidelines perfectly.",
-        timestamp: new Date().setDate(new Date().getDate() - 5),
-      },
-      {
-        id: "w3",
-        title: "UI/UX Feedback",
-        lastMessage:
-          "The navigation redesign received positive feedback from the test group.",
-        timestamp: new Date().setDate(new Date().getDate() - 6),
-      },
-    ],
-  },
-  {
-    period: "Last month",
-    conversations: [
-      {
-        id: "m1",
-        title: "Initial Project Setup",
-        lastMessage:
-          "All the development environments are now configured consistently.",
-        timestamp: new Date().setDate(new Date().getDate() - 15),
-      },
-    ],
-  },
-]
+// Temporary user ID (replace with actual auth later)
+const USER_ID = "00000000-0000-0000-0000-000000000001"
 
-// Initial chat messages
-const initialMessages = [
-  {
-    id: 1,
-    role: "user",
-    content: "Hello! Can you help me with a coding question?",
-  },
-  {
-    id: 2,
-    role: "assistant",
-    content:
-      "Of course! I'd be happy to help with your coding question. What would you like to know?",
-  },
-  {
-    id: 3,
-    role: "user",
-    content: "How do I create a responsive layout with CSS Grid?",
-  },
-  {
-    id: 4,
-    role: "assistant",
-    content:
-      "Creating a responsive layout with CSS Grid is straightforward. Here's a basic example:\n\n```css\n.container {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));\n  gap: 1rem;\n}\n```\n\nThis creates a grid where:\n- Columns automatically fit as many as possible\n- Each column is at least 250px wide\n- Columns expand to fill available space\n- There's a 1rem gap between items\n\nWould you like me to explain more about how this works?",
-  },
-]
+interface Conversation {
+  id: string
+  title: string
+  last_message: string | null
+  updated_at: string
+}
 
-function ChatSidebar() {
+interface ChatSidebarProps {
+  conversations: Conversation[]
+  currentConversationId: string | null
+  onNewChat: () => void
+  onSelectConversation: (id: string) => void
+}
+
+function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelectConversation }: ChatSidebarProps) {
+  // Group conversations by time period
+  const groupedConversations = () => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const lastWeek = new Date(today)
+    lastWeek.setDate(lastWeek.getDate() - 7)
+
+    const groups: { period: string; conversations: Conversation[] }[] = [
+      { period: "Today", conversations: [] },
+      { period: "Yesterday", conversations: [] },
+      { period: "Last 7 days", conversations: [] },
+      { period: "Older", conversations: [] },
+    ]
+
+    conversations.forEach((conv) => {
+      const convDate = new Date(conv.updated_at)
+      if (convDate >= today) {
+        groups[0].conversations.push(conv)
+      } else if (convDate >= yesterday) {
+        groups[1].conversations.push(conv)
+      } else if (convDate >= lastWeek) {
+        groups[2].conversations.push(conv)
+      } else {
+        groups[3].conversations.push(conv)
+      }
+    })
+
+    return groups.filter((group) => group.conversations.length > 0)
+  }
+
   return (
     <Sidebar>
       <SidebarHeader className="flex flex-row items-center justify-between gap-2 px-2 py-4">
         <div className="flex flex-row items-center gap-2 px-2">
           <div className="bg-primary/10 size-8 rounded-md"></div>
           <div className="text-md font-base text-primary tracking-tight">
-            zola.chat
+            Docling RAG
           </div>
         </div>
         <Button variant="ghost" className="size-8">
@@ -178,17 +115,22 @@ function ChatSidebar() {
           <Button
             variant="outline"
             className="mb-4 flex w-full items-center gap-2"
+            onClick={onNewChat}
           >
             <PlusIcon className="size-4" />
             <span>New Chat</span>
           </Button>
         </div>
-        {conversationHistory.map((group) => (
+        {groupedConversations().map((group) => (
           <SidebarGroup key={group.period}>
             <SidebarGroupLabel>{group.period}</SidebarGroupLabel>
             <SidebarMenu>
               {group.conversations.map((conversation) => (
-                <SidebarMenuButton key={conversation.id}>
+                <SidebarMenuButton
+                  key={conversation.id}
+                  onClick={() => onSelectConversation(conversation.id)}
+                  isActive={currentConversationId === conversation.id}
+                >
                   <span>{conversation.title}</span>
                 </SidebarMenuButton>
               ))}
@@ -200,15 +142,52 @@ function ChatSidebar() {
   )
 }
 
-function ChatContent() {
+interface ChatContentProps {
+  conversationId: string | null
+  onConversationCreated: (id: string) => void
+  onRefreshConversations: () => void
+  onNewChat: () => void
+}
+
+function ChatContent({ conversationId, onConversationCreated, onRefreshConversations, onNewChat }: ChatContentProps) {
   const [prompt, setPrompt] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [chatMessages, setChatMessages] = useState(initialMessages)
+  const [chatMessages, setChatMessages] = useState<any[]>([])
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
-  const handleSubmit = () => {
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (conversationId) {
+      loadConversationMessages(conversationId)
+    } else {
+      // Clear messages when starting new chat
+      console.log('Clearing messages for new chat')
+      setChatMessages([])
+    }
+  }, [conversationId])
+
+  const loadConversationMessages = async (convId: string) => {
+    try {
+      console.log('Loading messages for conversation:', convId)
+      const response = await fetch(`/api/conversations/${convId}/messages`)
+      if (response.ok) {
+        const messages = await response.json()
+        console.log('Loaded messages:', messages.length)
+        setChatMessages(messages.map((msg: any, idx: number) => ({
+          id: idx + 1,
+          role: msg.role,
+          content: msg.content
+        })))
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error)
+    }
+  }
+
+  const handleSubmit = async () => {
     if (!prompt.trim()) return
 
+    const userPrompt = prompt.trim()
     setPrompt("")
     setIsLoading(true)
 
@@ -216,22 +195,121 @@ function ChatContent() {
     const newUserMessage = {
       id: chatMessages.length + 1,
       role: "user",
-      content: prompt.trim(),
+      content: userPrompt,
     }
 
+    console.log('Adding user message:', newUserMessage)
     setChatMessages([...chatMessages, newUserMessage])
+    console.log('Current messages after adding user:', chatMessages.length + 1)
 
-    // Simulate API response
-    setTimeout(() => {
-      const assistantResponse = {
-        id: chatMessages.length + 2,
-        role: "assistant",
-        content: `This is a response to: "${prompt.trim()}"`,
+    try {
+      // Call the backend API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userPrompt,
+          conversation_id: conversationId,
+          user_id: USER_ID
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
       }
 
-      setChatMessages((prev) => [...prev, assistantResponse])
+      // Handle SSE streaming response
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) {
+        throw new Error('No response body')
+      }
+
+      let assistantMessage = ""
+      const assistantMessageId = chatMessages.length + 2
+
+      // Add empty assistant message that we'll update
+      console.log('Adding empty assistant message')
+      setChatMessages(prev => {
+        const newMessages = [...prev, {
+          id: assistantMessageId,
+          role: "assistant",
+          content: ""
+        }]
+        console.log('Messages after adding assistant:', newMessages.length)
+        return newMessages
+      })
+
+      let buffer = ""
+      let newConversationId = conversationId
+
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) break
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true })
+
+        // Split by SSE message delimiter
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || "" // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.type === 'conversation_id') {
+                // New conversation created
+                newConversationId = data.conversation_id
+                console.log('Conversation created:', newConversationId)
+                onConversationCreated(newConversationId)
+              } else if (data.type === 'token') {
+                assistantMessage += data.content
+
+                // Update the assistant message with accumulated content
+                setChatMessages(prev => {
+                  const updated = [...prev]
+                  const lastMessage = updated[updated.length - 1]
+                  if (lastMessage && lastMessage.role === "assistant") {
+                    lastMessage.content = assistantMessage
+                  }
+                  console.log('Updated assistant message, length:', assistantMessage.length)
+                  return updated
+                })
+              } else if (data.type === 'done') {
+                console.log('Stream complete, final message length:', assistantMessage.length)
+                setIsLoading(false)
+                // Refresh conversation list to update last message
+                onRefreshConversations()
+              } else if (data.type === 'error') {
+                console.error('Stream error:', data.message)
+                throw new Error(data.message)
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse SSE message:', line, parseError)
+            }
+          }
+        }
+      }
+
       setIsLoading(false)
-    }, 1500)
+    } catch (error) {
+      console.error('Chat error:', error)
+
+      // Add error message
+      setChatMessages(prev => [...prev, {
+        id: chatMessages.length + 2,
+        role: "assistant",
+        content: "Sorry, er is een fout opgetreden bij het verwerken van je vraag."
+      }])
+
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -427,11 +505,63 @@ function ChatContent() {
 }
 
 export default function FullChatApp() {
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations()
+  }, [])
+
+  const loadConversations = async () => {
+    try {
+      console.log('Loading conversations for user:', USER_ID)
+      const response = await fetch(`/api/conversations?user_id=${USER_ID}`)
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Loaded conversations:', data.length, data)
+        setConversations(data)
+      } else {
+        console.error('Failed to load conversations, status:', response.status)
+      }
+    } catch (error) {
+      console.error('Failed to load conversations:', error)
+    }
+  }
+
+  const handleNewChat = () => {
+    setCurrentConversationId(null)
+  }
+
+  const handleNewChatWithClear = () => {
+    handleNewChat()
+  }
+
+  const handleSelectConversation = (id: string) => {
+    setCurrentConversationId(id)
+  }
+
+  const handleConversationCreated = (id: string) => {
+    console.log('handleConversationCreated called with id:', id)
+    setCurrentConversationId(id)
+    loadConversations()
+  }
+
   return (
     <SidebarProvider>
-      <ChatSidebar />
+      <ChatSidebar
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onNewChat={handleNewChat}
+        onSelectConversation={handleSelectConversation}
+      />
       <SidebarInset>
-        <ChatContent />
+        <ChatContent
+          conversationId={currentConversationId}
+          onConversationCreated={handleConversationCreated}
+          onRefreshConversations={loadConversations}
+          onNewChat={handleNewChatWithClear}
+        />
       </SidebarInset>
     </SidebarProvider>
   )
