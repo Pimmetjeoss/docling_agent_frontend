@@ -42,6 +42,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react"
+import Image from "next/image"
 
 // Temporary user ID (replace with actual auth later)
 const USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -94,6 +95,10 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     }
   }, [onDeleteConversation])
 
+  const handleEditTitleChange = useCallback((value: string) => {
+    setEditTitle(value)
+  }, [])
+
   // Filter conversations based on search query - memoized for performance
   const filteredConversations = useMemo(() => {
     if (!debouncedSearchQuery.trim()) return conversations
@@ -137,7 +142,14 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     <Sidebar>
       <SidebarHeader className="flex flex-col gap-2 px-2 py-4">
         <div className="flex flex-row items-center gap-2 px-2">
-          <img src="/Contiweb_rag.png" alt="Contiweb RAG" className="h-12" />
+          <Image
+            src="/Contiweb_rag.png"
+            alt="Contiweb RAG"
+            width={150}
+            height={48}
+            className="h-12 w-auto"
+            priority
+          />
         </div>
         <div className="relative px-2">
           <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -177,71 +189,18 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
             <SidebarMenu>
               {group.conversations.map((conversation) => (
                 <div key={conversation.id} className="group/conversation relative">
-                  {editingId === conversation.id ? (
-                    <div className="flex items-center gap-1 px-2 py-1">
-                      <input
-                        type="text"
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveRename()
-                          if (e.key === "Escape") handleCancelRename()
-                        }}
-                        className="flex-1 rounded border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
-                        autoFocus
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={handleSaveRename}
-                      >
-                        <X className="size-3 rotate-45" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={handleCancelRename}
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <SidebarMenuButton
-                        onClick={() => onSelectConversation(conversation.id)}
-                        isActive={currentConversationId === conversation.id}
-                        className="flex-1"
-                      >
-                        <span className="truncate">{conversation.title}</span>
-                      </SidebarMenuButton>
-                      <div className="flex gap-0 opacity-0 transition-opacity group-hover/conversation:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleStartRename(conversation)
-                          }}
-                        >
-                          <Pencil className="size-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteClick(conversation.id)
-                          }}
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                  <ConversationItem
+                    conversation={conversation}
+                    isActive={currentConversationId === conversation.id}
+                    isEditing={editingId === conversation.id}
+                    editTitle={editTitle}
+                    onEditTitleChange={handleEditTitleChange}
+                    onSaveRename={handleSaveRename}
+                    onCancelRename={handleCancelRename}
+                    onStartRename={handleStartRename}
+                    onSelect={onSelectConversation}
+                    onDelete={handleDeleteClick}
+                  />
                 </div>
               ))}
             </SidebarMenu>
@@ -251,6 +210,115 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     </Sidebar>
   )
 }
+
+// Memoized conversation item to prevent re-renders
+interface ConversationItemProps {
+  conversation: Conversation
+  isActive: boolean
+  isEditing: boolean
+  editTitle: string
+  onEditTitleChange: (value: string) => void
+  onSaveRename: () => void
+  onCancelRename: () => void
+  onStartRename: (conversation: Conversation) => void
+  onSelect: (id: string) => void
+  onDelete: (id: string) => void
+}
+
+const ConversationItem = memo(({
+  conversation,
+  isActive,
+  isEditing,
+  editTitle,
+  onEditTitleChange,
+  onSaveRename,
+  onCancelRename,
+  onStartRename,
+  onSelect,
+  onDelete,
+}: ConversationItemProps) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") onSaveRename()
+    if (e.key === "Escape") onCancelRename()
+  }, [onSaveRename, onCancelRename])
+
+  const handleRenameClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onStartRename(conversation)
+  }, [conversation, onStartRename])
+
+  const handleDeleteClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete(conversation.id)
+  }, [conversation.id, onDelete])
+
+  const handleSelectClick = useCallback(() => {
+    onSelect(conversation.id)
+  }, [conversation.id, onSelect])
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-1 px-2 py-1">
+        <input
+          type="text"
+          value={editTitle}
+          onChange={(e) => onEditTitleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="flex-1 rounded border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+          autoFocus
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          onClick={onSaveRename}
+        >
+          <X className="size-3 rotate-45" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          onClick={onCancelRename}
+        >
+          <X className="size-3" />
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <SidebarMenuButton
+        onClick={handleSelectClick}
+        isActive={isActive}
+        className="flex-1"
+      >
+        <span className="truncate">{conversation.title}</span>
+      </SidebarMenuButton>
+      <div className="flex gap-0 opacity-0 transition-opacity group-hover/conversation:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={handleRenameClick}
+        >
+          <Pencil className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={handleDeleteClick}
+        >
+          <Trash2 className="size-3" />
+        </Button>
+      </div>
+    </div>
+  )
+})
+
+ConversationItem.displayName = "ConversationItem"
 
 const MemoizedChatSidebar = memo(ChatSidebar)
 MemoizedChatSidebar.displayName = "ChatSidebar"
