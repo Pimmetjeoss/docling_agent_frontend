@@ -122,10 +122,12 @@ function PromptInputTextarea({
   }, [value, maxHeight, disableAutosize])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl+Enter (Windows) or Cmd+Enter (Mac) to submit
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       onSubmit?.()
     }
+    // Enter without modifier = new line (default textarea behavior)
     onKeyDown?.(e)
   }
 

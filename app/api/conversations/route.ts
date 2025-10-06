@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Conversation, CreateConversationRequest } from '@/lib/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
       throw new Error(`Backend API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data: Conversation[] = await response.json();
     return NextResponse.json(data);
   } catch (error) {
     console.error('API route error:', error);
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body: CreateConversationRequest = await request.json();
 
     const response = await fetch(`${API_BASE_URL}/conversations`, {
       method: 'POST',
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Backend API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data: Conversation = await response.json();
     return NextResponse.json(data);
   } catch (error) {
     console.error('API route error:', error);

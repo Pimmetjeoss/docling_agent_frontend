@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ChatRequest } from '@/lib/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const runtime = 'edge';
-
-interface ChatRequest {
-  message: string;
-  conversation_id?: string | null;
-  user_id: string;
-}
 
 export async function POST(request: NextRequest) {
   try {

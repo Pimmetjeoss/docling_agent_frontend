@@ -5,7 +5,7 @@ import {
   ChatContainerRoot,
 } from "@/components/ui/chat-container"
 import {
-  Message,
+  Message as MessageComponent,
   MessageAction,
   MessageActions,
   MessageContent,
@@ -31,40 +31,66 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
+import { Message, Conversation, BackendMessage, ChatStreamEvent } from "@/lib/types"
 import {
   ArrowUp,
   Copy,
-  Globe,
-  Mic,
-  MoreHorizontal,
-  Pencil,
-  Plus,
   PlusIcon,
   Search,
-  ThumbsDown,
-  ThumbsUp,
-  Trash,
+  X,
+  Pencil,
+  Trash2,
 } from "lucide-react"
-import { useRef, useState, useEffect } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 
 // Temporary user ID (replace with actual auth later)
 const USER_ID = "00000000-0000-0000-0000-000000000001"
-
-interface Conversation {
-  id: string
-  title: string
-  last_message: string | null
-  updated_at: string
-}
 
 interface ChatSidebarProps {
   conversations: Conversation[]
   currentConversationId: string | null
   onNewChat: () => void
   onSelectConversation: (id: string) => void
+  onRenameConversation: (id: string, newTitle: string) => void
+  onDeleteConversation: (id: string) => void
 }
 
-function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelectConversation }: ChatSidebarProps) {
+function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelectConversation, onRenameConversation, onDeleteConversation }: ChatSidebarProps) {
+  const [searchQuery, setSearchQuery] = useState("")
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+
+  const handleStartRename = (conversation: Conversation) => {
+    setEditingId(conversation.id)
+    setEditTitle(conversation.title)
+  }
+
+  const handleSaveRename = () => {
+    if (editingId && editTitle.trim()) {
+      onRenameConversation(editingId, editTitle.trim())
+      setEditingId(null)
+      setEditTitle("")
+    }
+  }
+
+  const handleCancelRename = () => {
+    setEditingId(null)
+    setEditTitle("")
+  }
+
+  const handleDeleteClick = (id: string) => {
+    if (confirm("Weet je zeker dat je dit gesprek wilt verwijderen?")) {
+      onDeleteConversation(id)
+    }
+  }
+
+  // Filter conversations based on search query
+  const filteredConversations = searchQuery.trim()
+    ? conversations.filter(conv =>
+        conv.title.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : conversations
+
   // Group conversations by time period
   const groupedConversations = () => {
     const now = new Date()
@@ -76,11 +102,11 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
 
     const groups: { period: string; conversations: Conversation[] }[] = [
       { period: "Laatste gesprekken", conversations: [] },
-      { period: "Yesterday", conversations: [] },
-      { period: "Older", conversations: [] },
+      { period: "Gisteren", conversations: [] },
+      { period: "Ouder", conversations: [] },
     ]
 
-    conversations.forEach((conv) => {
+    filteredConversations.forEach((conv) => {
       const convDate = new Date(conv.updated_at)
       if (convDate >= today) {
         groups[0].conversations.push(conv)
@@ -96,13 +122,30 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
 
   return (
     <Sidebar>
-      <SidebarHeader className="flex flex-row items-center justify-between gap-2 px-2 py-4">
+      <SidebarHeader className="flex flex-col gap-2 px-2 py-4">
         <div className="flex flex-row items-center gap-2 px-2">
           <img src="/Contiweb_rag.png" alt="Contiweb RAG" className="h-12" />
         </div>
-        <Button variant="ghost" className="size-8">
-          <Search className="size-4" />
-        </Button>
+        <div className="relative px-2">
+          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Zoek gesprekken..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-md border border-input bg-background pl-9 pr-8 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-1/2 size-6 -translate-y-1/2"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="size-3" />
+            </Button>
+          )}
+        </div>
       </SidebarHeader>
       <SidebarContent className="pt-4">
         <div className="px-4">
@@ -112,7 +155,7 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
             onClick={onNewChat}
           >
             <PlusIcon className="size-4" />
-            <span>New Chat</span>
+            <span>Nieuw gesprek</span>
           </Button>
         </div>
         {groupedConversations().map((group) => (
@@ -120,13 +163,73 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
             <SidebarGroupLabel>{group.period}</SidebarGroupLabel>
             <SidebarMenu>
               {group.conversations.map((conversation) => (
-                <SidebarMenuButton
-                  key={conversation.id}
-                  onClick={() => onSelectConversation(conversation.id)}
-                  isActive={currentConversationId === conversation.id}
-                >
-                  <span>{conversation.title}</span>
-                </SidebarMenuButton>
+                <div key={conversation.id} className="group/conversation relative">
+                  {editingId === conversation.id ? (
+                    <div className="flex items-center gap-1 px-2 py-1">
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveRename()
+                          if (e.key === "Escape") handleCancelRename()
+                        }}
+                        className="flex-1 rounded border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+                        autoFocus
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6"
+                        onClick={handleSaveRename}
+                      >
+                        <X className="size-3 rotate-45" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6"
+                        onClick={handleCancelRename}
+                      >
+                        <X className="size-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <SidebarMenuButton
+                        onClick={() => onSelectConversation(conversation.id)}
+                        isActive={currentConversationId === conversation.id}
+                        className="flex-1"
+                      >
+                        <span className="truncate">{conversation.title}</span>
+                      </SidebarMenuButton>
+                      <div className="flex gap-0 opacity-0 transition-opacity group-hover/conversation:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStartRename(conversation)
+                          }}
+                        >
+                          <Pencil className="size-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteClick(conversation.id)
+                          }}
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
             </SidebarMenu>
           </SidebarGroup>
@@ -146,9 +249,28 @@ interface ChatContentProps {
 function ChatContent({ conversationId, onConversationCreated, onRefreshConversations, onNewChat }: ChatContentProps) {
   const [prompt, setPrompt] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatMessages, setChatMessages] = useState<Message[]>([])
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const assistantMessageRef = useRef("")
+
+  // Smart auto-scroll: only scroll if user is near bottom
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const container = chatContainerRef.current
+    if (!container) return
+
+    // Check if user is near bottom (within 100px)
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100
+
+    if (isNearBottom) {
+      requestAnimationFrame(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        })
+      })
+    }
+  }, [])
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -164,12 +286,14 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     try {
       const response = await fetch(`/api/conversations/${convId}/messages`)
       if (response.ok) {
-        const messages = await response.json()
-        setChatMessages(messages.map((msg: any, idx: number) => ({
+        const messages: BackendMessage[] = await response.json()
+        setChatMessages(messages.map((msg, idx) => ({
           id: idx + 1,
           role: msg.role,
           content: msg.content
         })))
+        // Scroll to bottom after loading messages
+        setTimeout(() => scrollToBottomIfNeeded(), 100)
       }
     } catch (error) {
       console.error('Failed to load messages:', error)
@@ -193,13 +317,16 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
 
     // Add user message immediately
     setChatMessages(prev => {
-      const newUserMessage = {
+      const newUserMessage: Message = {
         id: prev.length + 1,
-        role: "user",
+        role: "user" as const,
         content: userPrompt,
       }
       return [...prev, newUserMessage]
     })
+
+    // Scroll to show the user's message
+    setTimeout(() => scrollToBottomIfNeeded(), 50)
 
     try {
       // Call the backend API
@@ -233,12 +360,12 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
       // Add empty assistant message that we'll update
       setChatMessages(prev => {
         const assistantMessageId = prev.length + 1
-        const newMessages = [...prev, {
+        const newMessage: Message = {
           id: assistantMessageId,
-          role: "assistant",
+          role: "assistant" as const,
           content: ""
-        }]
-        return newMessages
+        }
+        return [...prev, newMessage]
       })
 
       let buffer = ""
@@ -259,7 +386,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6))
+              const data: ChatStreamEvent = JSON.parse(line.slice(6))
 
               if (data.type === 'conversation_id') {
                 // New conversation created - just store it, don't update yet
@@ -281,6 +408,9 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
 
                   return updated
                 })
+
+                // Auto-scroll during streaming
+                scrollToBottomIfNeeded()
               } else if (data.type === 'done') {
                 setIsLoading(false)
 
@@ -309,11 +439,12 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
       console.error('Chat error:', error)
 
       // Add error message
-      setChatMessages(prev => [...prev, {
+      const errorMessage: Message = {
         id: chatMessages.length + 2,
-        role: "assistant",
+        role: "assistant" as const,
         content: "Sorry, er is een fout opgetreden bij het verwerken van je vraag."
-      }])
+      }
+      setChatMessages(prev => [...prev, errorMessage])
 
       setIsLoading(false)
     }
@@ -333,7 +464,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
               const isLastMessage = index === chatMessages.length - 1
 
               return (
-                <Message
+                <MessageComponent
                   key={`${message.id}-${message.content?.length || 0}`}
                   className={cn(
                     "mx-auto flex w-full max-w-3xl flex-col gap-2 px-6",
@@ -342,47 +473,48 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
                 >
                   {isAssistant ? (
                     <div className="group flex w-full flex-col gap-0">
-                      <MessageContent
-                        className="text-foreground prose flex-1 rounded-lg bg-transparent p-0"
-                        markdown
-                      >
-                        {message.content}
-                      </MessageContent>
-                      <MessageActions
-                        className={cn(
-                          "-ml-2.5 flex gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100",
-                          isLastMessage && "opacity-100"
-                        )}
-                      >
-                        <MessageAction tooltip="Copy" delayDuration={100}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full"
-                            onClick={() => handleCopy(message.content)}
+                      {message.content === "" && isLoading ? (
+                        <div className="flex gap-1.5 px-4 py-3">
+                          <div
+                            className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                            style={{ animationDelay: '0ms' }}
+                          />
+                          <div
+                            className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                            style={{ animationDelay: '150ms' }}
+                          />
+                          <div
+                            className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                            style={{ animationDelay: '300ms' }}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <MessageContent
+                            className="text-foreground prose flex-1 rounded-lg bg-transparent p-0"
+                            markdown
                           >
-                            <Copy />
-                          </Button>
-                        </MessageAction>
-                        <MessageAction tooltip="Upvote" delayDuration={100}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full"
+                            {message.content}
+                          </MessageContent>
+                          <MessageActions
+                            className={cn(
+                              "-ml-2.5 flex gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100",
+                              isLastMessage && "opacity-100"
+                            )}
                           >
-                            <ThumbsUp />
-                          </Button>
-                        </MessageAction>
-                        <MessageAction tooltip="Downvote" delayDuration={100}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full"
-                          >
-                            <ThumbsDown />
-                          </Button>
-                        </MessageAction>
-                      </MessageActions>
+                            <MessageAction tooltip="Kopiëren" delayDuration={100}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full"
+                                onClick={() => handleCopy(message.content)}
+                              >
+                                <Copy />
+                              </Button>
+                            </MessageAction>
+                          </MessageActions>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="group flex flex-col items-end gap-1">
@@ -394,25 +526,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
                           "flex gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                         )}
                       >
-                        <MessageAction tooltip="Edit" delayDuration={100}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full"
-                          >
-                            <Pencil />
-                          </Button>
-                        </MessageAction>
-                        <MessageAction tooltip="Delete" delayDuration={100}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full"
-                          >
-                            <Trash />
-                          </Button>
-                        </MessageAction>
-                        <MessageAction tooltip="Copy" delayDuration={100}>
+                        <MessageAction tooltip="Kopiëren" delayDuration={100}>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -425,7 +539,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
                       </MessageActions>
                     </div>
                   )}
-                </Message>
+                </MessageComponent>
               )
             })}
           </ChatContainerContent>
@@ -446,63 +560,23 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
           >
             <div className="flex flex-col">
               <PromptInputTextarea
-                placeholder="Ask anything"
+                placeholder="Vraag wat je wilt (Ctrl+Enter om te versturen)"
                 className="min-h-[44px] pt-3 pl-4 text-base leading-[1.3] sm:text-base md:text-base"
               />
 
-              <PromptInputActions className="mt-5 flex w-full items-center justify-between gap-2 px-3 pb-3">
-                <div className="flex items-center gap-2">
-                  <PromptInputAction tooltip="Add a new action">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full"
-                    >
-                      <Plus size={18} />
-                    </Button>
-                  </PromptInputAction>
-
-                  <PromptInputAction tooltip="Search">
-                    <Button variant="outline" className="rounded-full">
-                      <Globe size={18} />
-                      Search
-                    </Button>
-                  </PromptInputAction>
-
-                  <PromptInputAction tooltip="More actions">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full"
-                    >
-                      <MoreHorizontal size={18} />
-                    </Button>
-                  </PromptInputAction>
-                </div>
-                <div className="flex items-center gap-2">
-                  <PromptInputAction tooltip="Voice input">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full"
-                    >
-                      <Mic size={18} />
-                    </Button>
-                  </PromptInputAction>
-
-                  <Button
-                    size="icon"
-                    disabled={!prompt.trim() || isLoading}
-                    onClick={handleSubmit}
-                    className="size-9 rounded-full"
-                  >
-                    {!isLoading ? (
-                      <ArrowUp size={18} />
-                    ) : (
-                      <span className="size-3 rounded-xs bg-white" />
-                    )}
-                  </Button>
-                </div>
+              <PromptInputActions className="mt-5 flex w-full items-center justify-end gap-2 px-3 pb-3">
+                <Button
+                  size="icon"
+                  disabled={!prompt.trim() || isLoading}
+                  onClick={handleSubmit}
+                  className="size-9 rounded-full"
+                >
+                  {!isLoading ? (
+                    <ArrowUp size={18} />
+                  ) : (
+                    <span className="size-3 rounded-xs bg-white" />
+                  )}
+                </Button>
               </PromptInputActions>
             </div>
           </PromptInput>
@@ -530,7 +604,7 @@ export default function FullChatApp() {
         return
       }
 
-      const data = await response.json()
+      const data: Conversation[] = await response.json()
       setConversations(data)
     } catch (error) {
       console.error('Failed to load conversations:', error)
@@ -539,10 +613,6 @@ export default function FullChatApp() {
 
   const handleNewChat = () => {
     setCurrentConversationId(null)
-  }
-
-  const handleNewChatWithClear = () => {
-    handleNewChat()
   }
 
   const handleSelectConversation = (id: string) => {
@@ -564,6 +634,51 @@ export default function FullChatApp() {
     }
   }
 
+  const handleRenameConversation = async (id: string, newTitle: string) => {
+    try {
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: newTitle }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to rename conversation: ${response.status}`)
+      }
+
+      // Reload conversations to reflect the change
+      await loadConversations()
+    } catch (error) {
+      console.error('Error renaming conversation:', error)
+      alert('Kan gesprek niet hernoemen. Probeer het opnieuw.')
+    }
+  }
+
+  const handleDeleteConversation = async (id: string) => {
+    try {
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete conversation: ${response.status}`)
+      }
+
+      // If we deleted the current conversation, clear it
+      if (currentConversationId === id) {
+        setCurrentConversationId(null)
+      }
+
+      // Reload conversations to reflect the change
+      await loadConversations()
+    } catch (error) {
+      console.error('Error deleting conversation:', error)
+      alert('Kan gesprek niet verwijderen. Probeer het opnieuw.')
+    }
+  }
+
   return (
     <SidebarProvider>
       <ChatSidebar
@@ -571,13 +686,15 @@ export default function FullChatApp() {
         currentConversationId={currentConversationId}
         onNewChat={handleNewChat}
         onSelectConversation={handleSelectConversation}
+        onRenameConversation={handleRenameConversation}
+        onDeleteConversation={handleDeleteConversation}
       />
       <SidebarInset>
         <ChatContent
           conversationId={currentConversationId}
           onConversationCreated={handleConversationCreated}
           onRefreshConversations={loadConversations}
-          onNewChat={handleNewChatWithClear}
+          onNewChat={handleNewChat}
         />
       </SidebarInset>
     </SidebarProvider>

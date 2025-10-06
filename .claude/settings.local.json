@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx shadcn@latest add \"https://prompt-kit.com/c/chat-container.json\" -y)",
+      "Bash(npx shadcn@latest add \"https://prompt-kit.com/c/message.json\" -y)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(dir:*)",
+      "Read(//c/Agents/ottomator-agents/docling-rag-agent/**)",
+      "Bash(curl -N \"http://localhost:8000/chat/stream\" -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"message\"\"\"\":\"\"\"\"test\"\"\"\",\"\"\"\"user_id\"\"\"\":\"\"\"\"00000000-0000-0000-0000-000000000001\"\"\"\"}')",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
