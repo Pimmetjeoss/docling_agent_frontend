@@ -75,9 +75,8 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     lastWeek.setDate(lastWeek.getDate() - 7)
 
     const groups: { period: string; conversations: Conversation[] }[] = [
-      { period: "Today", conversations: [] },
+      { period: "Laatste gesprekken", conversations: [] },
       { period: "Yesterday", conversations: [] },
-      { period: "Last 7 days", conversations: [] },
       { period: "Older", conversations: [] },
     ]
 
@@ -87,10 +86,8 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
         groups[0].conversations.push(conv)
       } else if (convDate >= yesterday) {
         groups[1].conversations.push(conv)
-      } else if (convDate >= lastWeek) {
-        groups[2].conversations.push(conv)
       } else {
-        groups[3].conversations.push(conv)
+        groups[2].conversations.push(conv)
       }
     })
 
@@ -101,10 +98,7 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
     <Sidebar>
       <SidebarHeader className="flex flex-row items-center justify-between gap-2 px-2 py-4">
         <div className="flex flex-row items-center gap-2 px-2">
-          <div className="bg-primary/10 size-8 rounded-md"></div>
-          <div className="text-md font-base text-primary tracking-tight">
-            Docling RAG
-          </div>
+          <img src="/Contiweb_rag.png" alt="Contiweb RAG" className="h-12" />
         </div>
         <Button variant="ghost" className="size-8">
           <Search className="size-4" />
@@ -144,8 +138,8 @@ function ChatSidebar({ conversations, currentConversationId, onNewChat, onSelect
 
 interface ChatContentProps {
   conversationId: string | null
-  onConversationCreated: (id: string) => void
-  onRefreshConversations: () => void
+  onConversationCreated: (id: string) => Promise<void>
+  onRefreshConversations: () => Promise<void>
   onNewChat: () => void
 }
 
@@ -154,6 +148,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
   const [isLoading, setIsLoading] = useState(false)
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const assistantMessageRef = useRef("")
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -161,18 +156,15 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
       loadConversationMessages(conversationId)
     } else {
       // Clear messages when starting new chat
-      console.log('Clearing messages for new chat')
       setChatMessages([])
     }
   }, [conversationId])
 
   const loadConversationMessages = async (convId: string) => {
     try {
-      console.log('Loading messages for conversation:', convId)
       const response = await fetch(`/api/conversations/${convId}/messages`)
       if (response.ok) {
         const messages = await response.json()
-        console.log('Loaded messages:', messages.length)
         setChatMessages(messages.map((msg: any, idx: number) => ({
           id: idx + 1,
           role: msg.role,
@@ -184,6 +176,14 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     }
   }
 
+  const handleCopy = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+    } catch (err) {
+      console.error('Failed to copy text:', err)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!prompt.trim()) return
 
@@ -192,15 +192,14 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     setIsLoading(true)
 
     // Add user message immediately
-    const newUserMessage = {
-      id: chatMessages.length + 1,
-      role: "user",
-      content: userPrompt,
-    }
-
-    console.log('Adding user message:', newUserMessage)
-    setChatMessages([...chatMessages, newUserMessage])
-    console.log('Current messages after adding user:', chatMessages.length + 1)
+    setChatMessages(prev => {
+      const newUserMessage = {
+        id: prev.length + 1,
+        role: "user",
+        content: userPrompt,
+      }
+      return [...prev, newUserMessage]
+    })
 
     try {
       // Call the backend API
@@ -228,18 +227,17 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
         throw new Error('No response body')
       }
 
-      let assistantMessage = ""
-      const assistantMessageId = chatMessages.length + 2
+      // Reset assistant message ref for new response
+      assistantMessageRef.current = ""
 
       // Add empty assistant message that we'll update
-      console.log('Adding empty assistant message')
       setChatMessages(prev => {
+        const assistantMessageId = prev.length + 1
         const newMessages = [...prev, {
           id: assistantMessageId,
           role: "assistant",
           content: ""
         }]
-        console.log('Messages after adding assistant:', newMessages.length)
         return newMessages
       })
 
@@ -264,28 +262,37 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
               const data = JSON.parse(line.slice(6))
 
               if (data.type === 'conversation_id') {
-                // New conversation created
+                // New conversation created - just store it, don't update yet
                 newConversationId = data.conversation_id
-                console.log('Conversation created:', newConversationId)
-                onConversationCreated(newConversationId)
               } else if (data.type === 'token') {
-                assistantMessage += data.content
+                assistantMessageRef.current += data.content
 
                 // Update the assistant message with accumulated content
                 setChatMessages(prev => {
                   const updated = [...prev]
-                  const lastMessage = updated[updated.length - 1]
-                  if (lastMessage && lastMessage.role === "assistant") {
-                    lastMessage.content = assistantMessage
+                  const lastIndex = updated.length - 1
+
+                  if (updated[lastIndex]?.role === "assistant") {
+                    updated[lastIndex] = {
+                      ...updated[lastIndex],
+                      content: assistantMessageRef.current
+                    }
                   }
-                  console.log('Updated assistant message, length:', assistantMessage.length)
+
                   return updated
                 })
               } else if (data.type === 'done') {
-                console.log('Stream complete, final message length:', assistantMessage.length)
                 setIsLoading(false)
-                // Refresh conversation list to update last message
-                onRefreshConversations()
+
+                // Now update conversation after streaming is done
+                if (newConversationId && newConversationId !== conversationId) {
+                  void onConversationCreated(newConversationId).catch((err) => {
+                    console.error('Error updating conversation:', err)
+                  })
+                } else {
+                  // Just refresh conversation list to update last message
+                  void onRefreshConversations()
+                }
               } else if (data.type === 'error') {
                 console.error('Stream error:', data.message)
                 throw new Error(data.message)
@@ -316,7 +323,6 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
     <main className="flex h-screen flex-col overflow-hidden">
       <header className="bg-background z-10 flex h-16 w-full shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger className="-ml-1" />
-        <div className="text-foreground">Project roadmap discussion</div>
       </header>
 
       <div ref={chatContainerRef} className="relative flex-1 overflow-y-auto">
@@ -328,7 +334,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
 
               return (
                 <Message
-                  key={message.id}
+                  key={`${message.id}-${message.content?.length || 0}`}
                   className={cn(
                     "mx-auto flex w-full max-w-3xl flex-col gap-2 px-6",
                     isAssistant ? "items-start" : "items-end"
@@ -353,6 +359,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
                             variant="ghost"
                             size="icon"
                             className="rounded-full"
+                            onClick={() => handleCopy(message.content)}
                           >
                             <Copy />
                           </Button>
@@ -410,6 +417,7 @@ function ChatContent({ conversationId, onConversationCreated, onRefreshConversat
                             variant="ghost"
                             size="icon"
                             className="rounded-full"
+                            onClick={() => handleCopy(message.content)}
                           >
                             <Copy />
                           </Button>
@@ -515,15 +523,15 @@ export default function FullChatApp() {
 
   const loadConversations = async () => {
     try {
-      console.log('Loading conversations for user:', USER_ID)
       const response = await fetch(`/api/conversations?user_id=${USER_ID}`)
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Loaded conversations:', data.length, data)
-        setConversations(data)
-      } else {
+
+      if (!response.ok) {
         console.error('Failed to load conversations, status:', response.status)
+        return
       }
+
+      const data = await response.json()
+      setConversations(data)
     } catch (error) {
       console.error('Failed to load conversations:', error)
     }
@@ -541,10 +549,19 @@ export default function FullChatApp() {
     setCurrentConversationId(id)
   }
 
-  const handleConversationCreated = (id: string) => {
-    console.log('handleConversationCreated called with id:', id)
-    setCurrentConversationId(id)
-    loadConversations()
+  const handleConversationCreated = async (id: string) => {
+    try {
+      // Small delay to ensure backend has committed to database
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Load conversations first to update sidebar
+      await loadConversations()
+
+      // Then set the current conversation
+      setCurrentConversationId(id)
+    } catch (error) {
+      console.error('Error in handleConversationCreated:', error)
+    }
   }
 
   return (
